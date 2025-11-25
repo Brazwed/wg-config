@@ -126,4 +126,11 @@ for LOGFILE in /var/log/*.log /var/log/*/*.log; do
     fi
 done
 
-echo "=== Finalizado: VPS otimizada e sem geração de logs ==="
+echo "=== Instalando nano ==="
+if ! dpkg -l | grep -q nano; then
+    sudo apt install -y nano
+else
+    echo "Nano já está instalado."
+fi
+
+echo "=== Finalizado: VPS otimizada, com nano instalado e sem geração de logs ==="
