@@ -60,11 +60,15 @@ echo "=== Firewall iptables ==="
 REGRAS=(
     "-A INPUT -i lo -j ACCEPT"
     "-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
-    "-A INPUT -p tcp --dport 22 -j ACCEPT"
-    "-A INPUT -p udp --dport 51820 -j ACCEPT"
-    "-A INPUT -p udp --dport 53 -j ACCEPT"
-    "-A INPUT -p tcp --dport 53 -j ACCEPT"
-    "-A INPUT -p tcp --dport 853 -j ACCEPT"
+    "-A INPUT -p udp --dport 51820 -j ACCEPT"   # WireGuard
+    "-A INPUT -p tcp --dport 51821 -j ACCEPT"   # wg-easy painel
+    "-A INPUT -p tcp --dport 3000 -j ACCEPT"    # AdGuard setup
+    "-A INPUT -p tcp --dport 80 -j ACCEPT"      # AdGuard painel HTTP
+    "-A INPUT -p udp --dport 5053 -j ACCEPT"    # Unbound UDP
+    "-A INPUT -p tcp --dport 5053 -j ACCEPT"    # Unbound TCP
+    "-A INPUT -p udp --dport 53 -j ACCEPT"      # DNS UDP
+    "-A INPUT -p tcp --dport 53 -j ACCEPT"      # DNS TCP
+    "-A INPUT -p tcp --dport 853 -j ACCEPT"     # DNS over TLS
 )
 
 sudo iptables -P INPUT DROP
