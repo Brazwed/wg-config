@@ -15,16 +15,16 @@ if apt list --upgradable 2>/dev/null | grep -q upgradable; then
     sudo apt autoremove -y
     sudo apt autoclean -y
 else
-    echo "Nenhuma atualização pendente."
+    echo "[INFO] Nenhuma atualização pendente."
 fi
 
 echo "=== Segurança básica ==="
-if ! dpkg -l | grep -q unattended-upgrades; then
+if ! dpkg -l | grep -qw unattended-upgrades; then
     sudo apt install -y unattended-upgrades
     sudo dpkg-reconfigure --priority=low unattended-upgrades
 fi
 
-if ! dpkg -l | grep -q fail2ban; then
+if ! dpkg -l | grep -qw fail2ban; then
     sudo apt install -y fail2ban
 fi
 if ! systemctl is-active --quiet fail2ban; then
@@ -43,7 +43,7 @@ if ! swapon --show | grep -q "$SWAPFILE"; then
     fi
     sudo swapon $SWAPFILE
 else
-    echo "Swap já está ativo."
+    echo "[INFO] Swap já está ativo."
 fi
 
 echo "=== Tunings de memória ==="
@@ -77,7 +77,7 @@ for REGRA in "${REGRAS[@]}"; do
     fi
 done
 
-if ! dpkg -l | grep -q iptables-persistent; then
+if ! dpkg -l | grep -qw iptables-persistent; then
     sudo apt install -y iptables-persistent
     sudo netfilter-persistent save
     sudo netfilter-persistent enable
@@ -127,10 +127,19 @@ for LOGFILE in /var/log/*.log /var/log/*/*.log; do
 done
 
 echo "=== Instalando nano ==="
-if ! dpkg -l | grep -q nano; then
+if ! dpkg -l | grep -qw nano; then
     sudo apt install -y nano
 else
-    echo "Nano já está instalado."
+    echo "[INFO] Nano já está instalado."
 fi
 
-echo "=== Finalizado: VPS otimizada, com nano instalado e sem geração de logs ==="
+echo "=== Parte 1 concluída: VPS otimizada, com nano instalado e sem geração de logs ==="
+
+# === Iniciando Script Parte 2 ===
+SCRIPT2="$HOME/wginstall.sh"
+if [ -f "$SCRIPT2" ]; then
+    echo "[INFO] Executando Script Parte 2..."
+    bash "$SCRIPT2"
+else
+    echo "[WARN] Script Parte 2 não encontrado em $SCRIPT2. Pulei execução."
+fi
