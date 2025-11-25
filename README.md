@@ -1,3 +1,3 @@
-wget https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/setup.sh
-chmod +x setup.sh
-./setup.sh
+wget https://raw.githubusercontent.com/Brazwed/wg-config/refs/heads/main/script.sh
+chmod +x script.sh
+./script.sh
