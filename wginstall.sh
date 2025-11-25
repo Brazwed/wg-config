@@ -1,145 +1,195 @@
 #!/bin/bash
-# Script de inicialização - Parte 1
-# Ubuntu 24.04 LTS minimal (Oracle VPS)
-# Objetivo: Atualização + segurança + swap + firewall iptables + otimizações WireGuard/AdGuard/Unbound + ZERO logs
+# Script de inicialização - Parte 2
+# Configuração de Docker + WireGuard + AdGuard + Unbound separado
 # Idempotente: verifica estado antes de aplicar
 
 set -e
 set -u
 
-echo "=== Atualizando pacotes ==="
-sudo apt update -y
-if apt list --upgradable 2>/dev/null | grep -q upgradable; then
-    sudo apt upgrade -y
-    sudo apt full-upgrade -y
-    sudo apt autoremove -y
-    sudo apt autoclean -y
+check_command() { command -v "$1" >/dev/null 2>&1; }
+
+# === Instalar Docker ===
+if check_command docker; then
+  echo "[INFO] Docker já está instalado."
 else
-    echo "[INFO] Nenhuma atualização pendente."
+  echo "[INFO] Instalando Docker..."
+  curl -sSL https://get.docker.com/ | CHANNEL=stable bash
+  systemctl enable docker
+  systemctl start docker
 fi
 
-echo "=== Segurança básica ==="
-if ! dpkg -l | grep -qw unattended-upgrades; then
-    sudo apt install -y unattended-upgrades
-    sudo dpkg-reconfigure --priority=low unattended-upgrades
-fi
-
-if ! dpkg -l | grep -qw fail2ban; then
-    sudo apt install -y fail2ban
-fi
-if ! systemctl is-active --quiet fail2ban; then
-    sudo systemctl enable fail2ban
-    sudo systemctl start fail2ban
-fi
-
-echo "=== Swap de 2GB ==="
-SWAPFILE="/swapfile"
-if ! swapon --show | grep -q "$SWAPFILE"; then
-    if [ ! -f "$SWAPFILE" ]; then
-        sudo fallocate -l 2G $SWAPFILE
-        sudo chmod 600 $SWAPFILE
-        sudo mkswap $SWAPFILE
-        echo "$SWAPFILE none swap sw 0 0" | sudo tee -a /etc/fstab
-    fi
-    sudo swapon $SWAPFILE
+# === Instalar Docker Compose plugin ===
+if check_command docker && docker compose version >/dev/null 2>&1; then
+  echo "[INFO] Docker Compose já está disponível."
 else
-    echo "[INFO] Swap já está ativo."
+  echo "[INFO] Instalando Docker Compose plugin..."
+  apt-get update && apt-get install -y docker-compose-plugin
 fi
 
-echo "=== Tunings de memória ==="
-if [ "$(sysctl -n vm.swappiness)" != "10" ]; then
-    echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
-    sudo sysctl -w vm.swappiness=10
-fi
-if [ "$(sysctl -n vm.vfs_cache_pressure)" != "50" ]; then
-    echo "vm.vfs_cache_pressure=50" | sudo tee -a /etc/sysctl.conf
-    sudo sysctl -w vm.vfs_cache_pressure=50
+# === Instalar Git ===
+if check_command git; then
+  echo "[INFO] Git já está instalado."
+else
+  echo "[INFO] Instalando Git..."
+  apt-get update && apt-get install -y git
 fi
 
-echo "=== Firewall iptables ==="
-REGRAS=(
-    "-A INPUT -i lo -j ACCEPT"
-    "-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
-    "-A INPUT -p tcp --dport 22 -j ACCEPT"
-    "-A INPUT -p udp --dport 51820 -j ACCEPT"
-    "-A INPUT -p udp --dport 53 -j ACCEPT"
-    "-A INPUT -p tcp --dport 53 -j ACCEPT"
-    "-A INPUT -p tcp --dport 853 -j ACCEPT"
-)
+# === Liberar porta 53 ===
+if systemctl is-active --quiet systemd-resolved; then
+  echo "[INFO] Desativando systemd-resolved..."
+  systemctl stop systemd-resolved
+  systemctl disable systemd-resolved
+  rm -f /etc/resolv.conf
+  echo "nameserver 1.1.1.1" > /etc/resolv.conf
+fi
 
-sudo iptables -P INPUT DROP
-sudo iptables -P FORWARD DROP
-sudo iptables -P OUTPUT ACCEPT
+# === Variáveis ===
+WG_HOST="SEU_IP_PUBLICO"
+WG_PASSWORD="SENHA_FORTE"
+BASE_DIR="$HOME/wg-adguard"
 
-for REGRA in "${REGRAS[@]}"; do
-    if ! sudo iptables -C ${REGRA:3} 2>/dev/null; then
-        sudo iptables $REGRA
-    fi
+# === Diretórios ===
+mkdir -p "$BASE_DIR/adguard/work"
+mkdir -p "$BASE_DIR/adguard/conf"
+mkdir -p "$BASE_DIR/unbound"
+mkdir -p "$BASE_DIR/.wg-easy"
+
+# === Configuração Unbound ===
+UNBOUND_CONF="$BASE_DIR/unbound/unbound.conf"
+if [ ! -f "$UNBOUND_CONF" ]; then
+cat > "$UNBOUND_CONF" <<EOF
+server:
+    verbosity: 1
+    interface: 0.0.0.0
+    port: 53
+    do-ip4: yes
+    do-udp: yes
+    do-tcp: yes
+    access-control: 0.0.0.0/0 allow
+    root-hints: /opt/unbound/root.hints
+    hide-identity: yes
+    hide-version: yes
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    use-caps-for-id: yes
+    edns-buffer-size: 1232
+EOF
+fi
+
+# === docker-compose.yml ===
+COMPOSE_FILE="$BASE_DIR/docker-compose.yml"
+if [ ! -f "$COMPOSE_FILE" ]; then
+cat > "$COMPOSE_FILE" <<EOF
+version: "3"
+
+services:
+  wg-easy:
+    environment:
+      - WG_HOST=${WG_HOST}
+      - PASSWORD=${WG_PASSWORD}
+      - WG_DEFAULT_DNS=10.8.1.3
+    image: weejewel/wg-easy
+    volumes:
+      - "$BASE_DIR/.wg-easy:/etc/wireguard"
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    networks:
+      wg-easy:
+        ipv4_address: 10.8.1.2
+
+  adguard:
+    image: adguard/adguardhome
+    container_name: adguard
+    volumes:
+      - "$BASE_DIR/adguard/work:/opt/adguardhome/work"
+      - "$BASE_DIR/adguard/conf:/opt/adguardhome/conf"
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3000:3000/tcp"
+      - "80:80/tcp"
+    restart: unless-stopped
+    networks:
+      wg-easy:
+        ipv4_address: 10.8.1.3
+
+  unbound:
+    image: mvance/unbound
+    container_name: unbound
+    volumes:
+      - "$BASE_DIR/unbound:/opt/unbound"
+    ports:
+      - "5053:53/tcp"
+      - "5053:53/udp"
+    restart: unless-stopped
+    networks:
+      wg-easy:
+        ipv4_address: 10.8.1.4
+
+networks:
+  wg-easy:
+    ipam:
+      config:
+        - subnet: 10.8.1.0/24
+EOF
+else
+  echo "[INFO] docker-compose.yml já existe, pulando criação..."
+fi
+
+# === Firewall ===
+PORTAS=( "udp:51820" "tcp:51821" "tcp:53" "udp:53" "tcp:3000" "tcp:80" "tcp:5053" "udp:5053" )
+for P in "${PORTAS[@]}"; do
+  PROTO="${P%%:*}"
+  PORT="${P##*:}"
+  if ! iptables -C INPUT -p "$PROTO" --dport "$PORT" -j ACCEPT 2>/dev/null; then
+    iptables -A INPUT -p "$PROTO" --dport "$PORT" -j ACCEPT
+  fi
 done
+iptables-save > /etc/iptables.rules
 
-if ! dpkg -l | grep -qw iptables-persistent; then
-    sudo apt install -y iptables-persistent
-    sudo netfilter-persistent save
-    sudo netfilter-persistent enable
-else
-    sudo netfilter-persistent save
+if [ ! -f /etc/systemd/system/iptables-restore.service ]; then
+cat > /etc/systemd/system/iptables-restore.service <<EOF
+[Unit]
+Description=Restore iptables rules
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/iptables-restore /etc/iptables.rules
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable iptables-restore.service
 fi
 
-echo "=== Tunings WireGuard + AdGuard + Unbound ==="
-declare -A SYSCTL_VALORES=(
-    ["net.ipv4.ip_forward"]="1"
-    ["net.ipv6.conf.all.forwarding"]="1"
-    ["net.core.default_qdisc"]="fq"
-    ["net.ipv4.tcp_congestion_control"]="bbr"
-    ["fs.file-max"]="100000"
-    ["net.core.rmem_max"]="2500000"
-    ["net.core.wmem_max"]="2500000"
-    ["net.ipv4.conf.all.rp_filter"]="1"
-    ["net.ipv4.conf.all.accept_redirects"]="0"
-    ["net.ipv4.conf.all.accept_source_route"]="0"
-    ["kernel.printk"]="3 3 3 3"
-)
-
-for PARAM in "${!SYSCTL_VALORES[@]}"; do
-    VALOR="${SYSCTL_VALORES[$PARAM]}"
-    if [ "$(sysctl -n $PARAM 2>/dev/null || echo '')" != "$VALOR" ]; then
-        echo "$PARAM=$VALOR" | sudo tee -a /etc/sysctl.conf
-        sudo sysctl -w "$PARAM=$VALOR"
-    fi
-done
-
-ulimit -n 65535
-
-echo "=== Desativando logs ==="
-sudo systemctl stop rsyslog || true
-sudo systemctl disable rsyslog || true
-
-JOURNAL_CONF="/etc/systemd/journald.conf"
-sudo sed -i 's/^#\?Storage=.*/Storage=none/' $JOURNAL_CONF
-sudo sed -i 's/^#\?ForwardToSyslog=.*/ForwardToSyslog=no/' $JOURNAL_CONF
-sudo sed -i 's/^#\?ForwardToConsole=.*/ForwardToConsole=no/' $JOURNAL_CONF
-sudo systemctl restart systemd-journald
-
-for LOGFILE in /var/log/*.log /var/log/*/*.log; do
-    if [ -f "$LOGFILE" ] && [ ! -L "$LOGFILE" ]; then
-        sudo ln -sf /dev/null "$LOGFILE"
-    fi
-done
-
-echo "=== Instalando nano ==="
-if ! dpkg -l | grep -qw nano; then
-    sudo apt install -y nano
-else
-    echo "[INFO] Nano já está instalado."
+# === IP Forwarding ===
+if [ "$(sysctl -n net.ipv4.ip_forward)" != "1" ]; then
+  sysctl -w net.ipv4.ip_forward=1
+  grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 fi
 
-echo "=== Parte 1 concluída: VPS otimizada, com nano instalado e sem geração de logs ==="
-
-# === Iniciando Script Parte 2 ===
-SCRIPT2="$HOME/wginstall.sh"
-if [ -f "$SCRIPT2" ]; then
-    echo "[INFO] Executando Script Parte 2..."
-    bash "$SCRIPT2"
+# === Git init ===
+cd "$BASE_DIR"
+if [ ! -d ".git" ]; then
+  git init
+  git add docker-compose.yml
+  git commit -m "Initial commit: WireGuard + AdGuard + Unbound setup"
 else
-    echo "[WARN] Script Parte 2 não encontrado em $SCRIPT2. Pulei execução."
+  echo "[INFO] Repositório Git já existe."
 fi
+
+# === Subir containers ===
+echo "[INFO] Subindo containers..."
+docker compose up -d
+
+echo "[INFO] Parte 2 concluída: Docker + WireGuard + AdGuard + Unbound configurados!"
