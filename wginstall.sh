@@ -44,37 +44,14 @@ if systemctl is-active --quiet systemd-resolved; then
 fi
 
 # === Variáveis ===
-WG_HOST="137.131.239.109"
-WG_PASSWORD="teste"
+WG_HOST="SEU_IP_PUBLICO"
+WG_PASSWORD="SENHA_FORTE"
 BASE_DIR="$HOME/wg-adguard"
 
 # === Diretórios ===
 mkdir -p "$BASE_DIR/adguard/work"
 mkdir -p "$BASE_DIR/adguard/conf"
-mkdir -p "$BASE_DIR/unbound"
 mkdir -p "$BASE_DIR/.wg-easy"
-
-# === Configuração Unbound ===
-UNBOUND_CONF="$BASE_DIR/unbound/unbound.conf"
-if [ ! -f "$UNBOUND_CONF" ]; then
-cat > "$UNBOUND_CONF" <<EOF
-server:
-    verbosity: 1
-    interface: 0.0.0.0
-    port: 53
-    do-ip4: yes
-    do-udp: yes
-    do-tcp: yes
-    access-control: 0.0.0.0/0 allow
-    root-hints: /opt/unbound/root.hints
-    hide-identity: yes
-    hide-version: yes
-    harden-glue: yes
-    harden-dnssec-stripped: yes
-    use-caps-for-id: yes
-    edns-buffer-size: 1232
-EOF
-fi
 
 # === docker-compose.yml ===
 COMPOSE_FILE="$BASE_DIR/docker-compose.yml"
@@ -87,7 +64,7 @@ services:
     environment:
       - WG_HOST=${WG_HOST}
       - PASSWORD=${WG_PASSWORD}
-      - WG_DEFAULT_DNS=10.8.1.3
+      - WG_DEFAULT_DNS=10.8.1.4
     image: weejewel/wg-easy
     volumes:
       - "$BASE_DIR/.wg-easy:/etc/wireguard"
@@ -122,10 +99,8 @@ services:
         ipv4_address: 10.8.1.3
 
   unbound:
-    image: mvance/unbound
+    image: klutchell/unbound
     container_name: unbound
-    volumes:
-      - "$BASE_DIR/unbound:/opt/unbound"
     ports:
       - "5053:53/tcp"
       - "5053:53/udp"
