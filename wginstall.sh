@@ -44,8 +44,8 @@ if systemctl is-active --quiet systemd-resolved; then
 fi
 
 # === Variáveis ===
-WG_HOST="SEU_IP_PUBLICO"
-WG_PASSWORD="SENHA_FORTE"
+WG_HOST="137.131.239.109"
+WG_PASSWORD="teste"
 BASE_DIR="$HOME/wg-adguard"
 
 # === Diretórios ===
