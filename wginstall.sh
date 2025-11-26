@@ -44,47 +44,14 @@ if systemctl is-active --quiet systemd-resolved; then
 fi
 
 # === Variáveis ===
-WG_HOST="137.131.239.109"
-WG_PASSWORD="teste"
+WG_HOST="SEU_IP_PUBLICO"
+WG_PASSWORD="SENHA_FORTE"
 BASE_DIR="$HOME/wg-adguard"
 
 # === Diretórios ===
 mkdir -p "$BASE_DIR/adguard/work"
 mkdir -p "$BASE_DIR/adguard/conf"
 mkdir -p "$BASE_DIR/.wg-easy"
-mkdir -p "$BASE_DIR/unbound"
-
-# === Configuração Unbound customizada ===
-UNBOUND_CONF="$BASE_DIR/unbound/unbound.conf"
-if [ ! -f "$UNBOUND_CONF" ]; then
-cat > "$UNBOUND_CONF" <<EOF
-server:
-    interface: 0.0.0.0
-    port: 53
-    do-ip4: yes
-    do-udp: yes
-    do-tcp: yes
-
-    # Privacidade
-    qname-minimisation: yes
-    hide-identity: yes
-    hide-version: yes
-
-    # Endurecimento
-    harden-glue: yes
-    harden-dnssec-stripped: yes
-    use-caps-for-id: yes
-
-    # Performance/robustez
-    edns-buffer-size: 1232
-    prefetch: yes
-
-    # Acesso (somente rede interna e localhost)
-    access-control: 10.8.1.0/24 allow
-    access-control: 127.0.0.0/8 allow
-    access-control: 0.0.0.0/0 deny
-EOF
-fi
 
 # === docker-compose.yml ===
 COMPOSE_FILE="$BASE_DIR/docker-compose.yml"
@@ -134,8 +101,6 @@ services:
   unbound:
     image: klutchell/unbound
     container_name: unbound
-    volumes:
-      - "$BASE_DIR/unbound/unbound.conf:/etc/unbound/unbound.conf:ro"
     ports:
       - "5053:53/tcp"
       - "5053:53/udp"
@@ -202,4 +167,4 @@ fi
 echo "[INFO] Subindo containers..."
 docker compose up -d
 
-echo "[INFO] Parte 2 concluída: Docker + WireGuard + AdGuard + Unbound configurados com segurança reforçada!"
+echo "[INFO] Parte 2 concluída: Docker + WireGuard + AdGuard + Unbound configurados!"
