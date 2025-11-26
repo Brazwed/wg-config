@@ -139,8 +139,11 @@ fi
 
 echo "=== Parte 1 concluída: VPS otimizada, com nano instalado e sem geração de logs ==="
 
-# === Iniciando Script Parte 2 ===
+# === Baixando e iniciando Script Parte 2 ===
 SCRIPT2="$HOME/wginstall.sh"
+echo "[INFO] Baixando Script Parte 2 de GitHub..."
+curl -fsSL https://raw.githubusercontent.com/Brazwed/wg-config/refs/heads/main/wginstall.sh -o "$SCRIPT2"
+
 if [ -f "$SCRIPT2" ]; then
     echo "[INFO] Executando Script Parte 2..."
     bash "$SCRIPT2"
